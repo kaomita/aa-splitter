@@ -115,7 +115,7 @@ export default function AASplitter() {
           animate={{ y: 0, opacity: 1 }}
           className="text-2xl md:text-3xl font-semibold mb-2"
         >
-          AA 收付款 — 出行费用结算
+          AA 收付款 — 费用结算
         </motion.h1>
 
         <p className="text-sm text-slate-600 mb-4">
@@ -128,9 +128,6 @@ export default function AASplitter() {
           </button>
           <button onClick={loadEqualThree} className="px-3 py-1 bg-sky-300 text-white rounded">
             示例: 三人相等
-          </button>
-          <button onClick={resetAll} className="px-3 py-1 bg-red-100 text-red-700 rounded">
-            清空
           </button>
         </div>
 
@@ -249,8 +246,7 @@ export default function AASplitter() {
         </div>
 
         <footer className="mt-6 text-xs text-slate-500">
-          说明：默认采用“按每位付款者的金额均摊到所有人，再做净对账”的方式，因此会生成每位欠款人与每位收款人之间的详细建议转账（这与“最少笔数转账”不同）。
-          如果你希望改成“尽量少笔数的转账（最少交易数）”，我可以另外添加一个切换模式。
+          说明：默认采用“按每位付款者的金额均摊到所有人，再做净对账”的方式。
         </footer>
       </div>
     </div>
