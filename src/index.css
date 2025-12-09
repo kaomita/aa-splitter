@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 你组件里用到的工具类 */
+.btn-primary { @apply px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition; }
+.btn-secondary { @apply px-4 py-2 rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition; }
+.btn-ghost { @apply px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100; }
+.card { @apply p-4 rounded-2xl border bg-white/90; }
+.card-title { @apply font-semibold mb-2; }
+.input { @apply p-2 border rounded-lg; }
