@@ -1,46 +1,64 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// AA-Splitter: single-file React component (Tailwind CSS assumed in host project)
-// Settlement algorithm: per-payer equal-split then net pairwise.
-// This component includes quick test-case buttons so you can load example data and
-// verify correctness without changing source.
+// AA-Splitter: TypeScript corrected version
+// - Explicit types for state to avoid `never[]` issues
+// - amountInput is number and input onChange converts to number
+// - updatePerson typed properly
+
+type Person = {
+  id: number;
+  name: string;
+  paid: number;
+};
+
+type Settlement = {
+  fromId: number;
+  fromName: string;
+  toId: number;
+  toName: string;
+  amount: number;
+};
 
 export default function AASplitter() {
-  const [people, setPeople] = useState([]);
-  const [nameInput, setNameInput] = useState("");
-  const [amountInput, setAmountInput] = useState(0);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [nameInput, setNameInput] = useState<string>("");
+  const [amountInput, setAmountInput] = useState<number>(0);
 
   const total = useMemo(() => people.reduce((s, p) => s + Number(p.paid || 0), 0), [people]);
   const avg = useMemo(() => (people.length ? total / people.length : 0), [people, total]);
 
   function addPerson() {
-    if (!nameInput.trim()) return;
-    setPeople((prev) => [
-      ...prev,
-      { id: Date.now(), name: nameInput.trim(), paid: Number(amountInput || 0) },
-    ]);
+    const name = nameInput.trim();
+    const amount = Number(amountInput) || 0;
+    if (!name) return;
+    // duplicate name check
+    if (people.some((p) => p.name === name)) return;
+    if (amount < 0) return;
+    setPeople((prev) => [...prev, { id: Date.now(), name, paid: amount }]);
     setNameInput("");
     setAmountInput(0);
   }
 
-  function updatePerson(id, key, value) {
-    setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, [key]: value } : p)));
+  function updatePerson(id: number, key: keyof Person, value: string | number) {
+    setPeople((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, [key]: key === "paid" ? Number(value) : value } : p as Person))
+    );
   }
 
-  function removePerson(id) {
+  function removePerson(id: number) {
     setPeople((prev) => prev.filter((p) => p.id !== id));
   }
 
-  const settlements = useMemo(() => {
+  const settlements = useMemo<Settlement[]>(() => {
     const n = people.length;
     if (n <= 1) return [];
     const eps = 0.005;
-    const result = [];
+    const result: Settlement[] = [];
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
-        const net = (Number(people[j].paid || 0) - Number(people[i].paid || 0)) / n;
+        const net = (Number(people[j].paid) - Number(people[i].paid)) / n;
         if (net > eps) {
           result.push({
             fromId: people[i].id,
@@ -56,7 +74,7 @@ export default function AASplitter() {
   }, [people]);
 
   const perPersonTotals = useMemo(() => {
-    const map = new Map();
+    const map = new Map<number, { outgoing: number; incoming: number }>();
     people.forEach((p) => map.set(p.id, { outgoing: 0, incoming: 0 }));
     settlements.forEach((s) => {
       const from = map.get(s.fromId);
@@ -75,9 +93,7 @@ export default function AASplitter() {
     const rows = [["From", "To", "Amount"]].concat(
       settlements.map((s) => [s.fromName, s.toName, s.amount.toFixed(2)])
     );
-    const csv = rows
-      .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n"); // fixed unterminated string here
+    const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -89,6 +105,8 @@ export default function AASplitter() {
 
   function resetAll() {
     setPeople([]);
+    setNameInput("");
+    setAmountInput(0);
   }
 
   function loadExampleABC() {
@@ -110,11 +128,7 @@ export default function AASplitter() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white p-6">
       <div className="max-w-4xl mx-auto shadow-2xl rounded-2xl bg-white/80 backdrop-blur p-6">
-        <motion.h1
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="text-2xl md:text-3xl font-semibold mb-2"
-        >
+        <motion.h1 initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="text-2xl md:text-3xl font-semibold mb-2">
           AA 收付款 — 费用结算
         </motion.h1>
 
@@ -123,12 +137,8 @@ export default function AASplitter() {
         </p>
 
         <div className="flex gap-2 mb-4">
-          <button onClick={loadExampleABC} className="px-3 py-1 bg-sky-500 text-white rounded">
-            示例: a=30, b=90, c=0
-          </button>
-          <button onClick={loadEqualThree} className="px-3 py-1 bg-sky-300 text-white rounded">
-            示例: 三人相等
-          </button>
+          <button onClick={loadExampleABC} className="px-3 py-1 bg-sky-500 text-white rounded">示例: a=30, b=90, c=0</button>
+          <button onClick={loadEqualThree} className="px-3 py-1 bg-sky-300 text-white rounded">示例: 三人相等</button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -136,63 +146,27 @@ export default function AASplitter() {
             <h2 className="font-medium mb-2">添加 / 编辑 成员</h2>
 
             <div className="flex gap-2 mb-3">
-              <input
-                className="flex-1 p-2 border rounded"
-                placeholder="姓名"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-              />
-              <input
-                type="number"
-                className="w-28 p-2 border rounded"
-                placeholder="已付金额"
-                value={amountInput}
-                onChange={(e) => setAmountInput(e.target.value)}
-              />
-              <button className="px-4 rounded bg-indigo-600 text-white" onClick={addPerson}>
-                添加
-              </button>
+              <input className="flex-1 p-2 border rounded" placeholder="姓名" value={nameInput} onChange={(e) => setNameInput(e.target.value)} />
+              <input type="number" className="w-28 p-2 border rounded" placeholder="已付金额" value={amountInput} onChange={(e) => setAmountInput(Number(e.target.value) || 0)} />
+              <button className="px-4 rounded bg-indigo-600 text-white" onClick={addPerson}>添加</button>
             </div>
 
             <div className="space-y-2">
               <AnimatePresence>
                 {people.map((p) => (
-                  <motion.div
-                    key={p.id}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.98 }}
-                    className="flex items-center gap-2"
-                  >
-                    <input
-                      className="flex-1 p-2 border rounded"
-                      value={p.name}
-                      onChange={(e) => updatePerson(p.id, "name", e.target.value)}
-                    />
-                    <input
-                      type="number"
-                      className="w-28 p-2 border rounded"
-                      value={p.paid}
-                      onChange={(e) => updatePerson(p.id, "paid", Number(e.target.value))}
-                    />
-                    <button className="px-3 py-1 rounded border" onClick={() => removePerson(p.id)}>
-                      删除
-                    </button>
+                  <motion.div key={p.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} className="flex items-center gap-2">
+                    <input className="flex-1 p-2 border rounded" value={p.name} onChange={(e) => updatePerson(p.id, "name", e.target.value)} />
+                    <input type="number" className="w-28 p-2 border rounded" value={p.paid} onChange={(e) => updatePerson(p.id, "paid", Number(e.target.value))} />
+                    <button className="px-3 py-1 rounded border" onClick={() => removePerson(p.id)}>删除</button>
                   </motion.div>
                 ))}
               </AnimatePresence>
             </div>
 
             <div className="mt-4 border-t pt-3 text-sm text-slate-600">
-              <div>
-                总费用：<span className="font-medium">¥{total.toFixed(2)}</span>
-              </div>
-              <div>
-                人数：<span className="font-medium">{people.length}</span>
-              </div>
-              <div>
-                每人均摊：<span className="font-medium">¥{avg.toFixed(2)}</span>
-              </div>
+              <div>总费用：<span className="font-medium">¥{total.toFixed(2)}</span></div>
+              <div>人数：<span className="font-medium">{people.length}</span></div>
+              <div>每人均摊：<span className="font-medium">¥{avg.toFixed(2)}</span></div>
             </div>
           </div>
 
@@ -245,9 +219,7 @@ export default function AASplitter() {
           </div>
         </div>
 
-        <footer className="mt-6 text-xs text-slate-500">
-          说明：默认采用“按每位付款者的金额均摊到所有人，再做净对账”的方式。
-        </footer>
+        <footer className="mt-6 text-xs text-slate-500">说明：默认采用“按每位付款者的金额均摊到所有人，再做净对账”的方式。</footer>
       </div>
     </div>
   );
