@@ -83,43 +83,81 @@ export default function AASplitter() {
   // 核心逻辑：每个人付的钱 - 均摊 = 净额，多付的人收钱，少付的人给钱
 
   const settlements: Settlement[] = useMemo(() => {
-    if (people.length < 2) return [];
+  if (people.length < 2) return [];
 
-    const balances = people.map((p) => ({
-      ...p,
-      balance: p.paid - avg,
-    }));
+  // 计算每个人的净额
+  const balances = people.map((p) => ({
+    id: p.id,
+    name: p.name,
+    balance: Number((p.paid - avg).toFixed(2)), // 负数=欠钱，正数=收钱
+  }));
 
-    const debtors = balances.filter((p) => p.balance < 0);
-    const creditors = balances.filter((p) => p.balance > 0);
+  const debtors = balances.filter((p) => p.balance < 0);
+  const creditors = balances.filter((p) => p.balance > 0);
 
-    const result: Settlement[] = [];
-    let i = 0;
-    let j = 0;
+  const result: Settlement[] = [];
 
-    while (i < debtors.length && j < creditors.length) {
-      const pay = Math.min(
-        -debtors[i].balance,
-        creditors[j].balance
-      );
+  /**
+   * Step 1：优先完全匹配（债务 === 债权）
+   */
+  for (let i = debtors.length - 1; i >= 0; i--) {
+    const d = debtors[i];
+    const target = creditors.find(
+      (c) => Math.abs(c.balance + d.balance) < 0.01
+    );
+
+    if (target) {
+      const amount = Math.abs(d.balance);
 
       result.push({
-        fromId: debtors[i].id,
-        fromName: debtors[i].name,
-        toId: creditors[j].id,
-        toName: creditors[j].name,
-        amount: Number(pay.toFixed(2)),
+        fromId: d.id,
+        fromName: d.name,
+        toId: target.id,
+        toName: target.name,
+        amount,
       });
 
-      debtors[i].balance += pay;
-      creditors[j].balance -= pay;
+      // 双方清零
+      d.balance = 0;
+      target.balance = 0;
 
-      if (Math.abs(debtors[i].balance) < 0.01) i++;
-      if (Math.abs(creditors[j].balance) < 0.01) j++;
+      // 移除已清算的人
+      debtors.splice(i, 1);
+      const idx = creditors.findIndex((c) => c.id === target.id);
+      if (idx !== -1) creditors.splice(idx, 1);
     }
+  }
 
-    return result;
-  }, [people, avg]);
+  /**
+   * Step 2：对剩余部分使用原来的贪心算法
+   */
+  let i = 0;
+  let j = 0;
+
+  while (i < debtors.length && j < creditors.length) {
+    const pay = Math.min(
+      -debtors[i].balance,
+      creditors[j].balance
+    );
+
+    result.push({
+      fromId: debtors[i].id,
+      fromName: debtors[i].name,
+      toId: creditors[j].id,
+      toName: creditors[j].name,
+      amount: Number(pay.toFixed(2)),
+    });
+
+    debtors[i].balance += pay;
+    creditors[j].balance -= pay;
+
+    if (Math.abs(debtors[i].balance) < 0.01) i++;
+    if (Math.abs(creditors[j].balance) < 0.01) j++;
+  }
+
+  return result;
+}, [people, avg]);
+
 
   /* ------------------ 每人汇总 ------------------ */
 
