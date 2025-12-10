@@ -94,9 +94,9 @@ export default function AASplitter() {
 
   function loadExample() {
     setPeople([
-      { id: 1, name: "a", paid: 30 },
-      { id: 2, name: "b", paid: 90 },
-      { id: 3, name: "c", paid: 0 }
+      { id: 1, name: "小八", paid: 10 },
+      { id: 2, name: "吉伊", paid: 20 },
+      { id: 3, name: "乌萨奇", paid: 30 }
     ]);
   }
 
