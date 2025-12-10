@@ -1,214 +1,286 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-interface Person {
+type Person = {
   id: number;
   name: string;
   paid: number;
-}
+};
 
-interface Settlement {
+type Settlement = {
   fromId: number;
   fromName: string;
   toId: number;
   toName: string;
   amount: number;
-}
+};
 
 export default function AASplitter() {
   const [people, setPeople] = useState<Person[]>([]);
-  const [nameInput, setNameInput] = useState<string>("");
-  const [amountInput, setAmountInput] = useState<number>(0);
+  const [nameInput, setNameInput] = useState("");
+  const [amountInput, setAmountInput] = useState("");
+  const [error, setError] = useState("");
 
-  const total = useMemo(() => people.reduce((s, p) => s + Number(p.paid || 0), 0), [people]);
-  const avg = useMemo(() => (people.length ? total / people.length : 0), [people, total]);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  /* ------------------ 计算总额 & 均摊 ------------------ */
+
+  const total = useMemo(
+    () => people.reduce((sum, p) => sum + p.paid, 0),
+    [people]
+  );
+
+  const avg = useMemo(
+    () => (people.length ? total / people.length : 0),
+    [people, total]
+  );
+
+  /* ------------------ 添加成员 ------------------ */
 
   function addPerson() {
-    if (!nameInput.trim()) return;
+    setError("");
+
+    const name = nameInput.trim();
+    const paid = Number(amountInput);
+
+    if (!name) {
+      setError("姓名不能为空");
+      return;
+    }
+
+    if (people.some((p) => p.name === name)) {
+      setError("姓名不能重复");
+      return;
+    }
+
+    if (isNaN(paid) || paid < 0) {
+      setError("金额必须是 ≥ 0 的数字");
+      return;
+    }
+
     setPeople((prev) => [
       ...prev,
-      { id: Date.now(), name: nameInput.trim(), paid: Number(amountInput || 0) },
+      { id: Date.now(), name, paid },
     ]);
+
     setNameInput("");
-    setAmountInput(0);
+    setAmountInput("");
+
+    setTimeout(() => nameRef.current?.focus(), 0);
   }
 
-  function updatePerson(id: number, key: keyof Person, value: string | number) {
-    setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, [key]: value } : p)));
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") addPerson();
   }
+
+  /* ------------------ 删除成员 ------------------ */
 
   function removePerson(id: number) {
     setPeople((prev) => prev.filter((p) => p.id !== id));
   }
 
+  /* ------------------ 结算计算逻辑 ------------------ */
+  // 核心逻辑：每个人付的钱 - 均摊 = 净额，多付的人收钱，少付的人给钱
+
   const settlements: Settlement[] = useMemo(() => {
-    const n = people.length;
-    if (n <= 1) return [];
-    const eps = 0.005;
+    if (people.length < 2) return [];
+
+    const balances = people.map((p) => ({
+      ...p,
+      balance: p.paid - avg,
+    }));
+
+    const debtors = balances.filter((p) => p.balance < 0);
+    const creditors = balances.filter((p) => p.balance > 0);
+
     const result: Settlement[] = [];
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        if (i === j) continue;
-        const net = (Number(people[j].paid || 0) - Number(people[i].paid || 0)) / n;
-        if (net > eps) {
-          result.push({
-            fromId: people[i].id,
-            fromName: people[i].name,
-            toId: people[j].id,
-            toName: people[j].name,
-            amount: Number(net.toFixed(2)),
-          });
-        }
-      }
+    let i = 0;
+    let j = 0;
+
+    while (i < debtors.length && j < creditors.length) {
+      const pay = Math.min(
+        -debtors[i].balance,
+        creditors[j].balance
+      );
+
+      result.push({
+        fromId: debtors[i].id,
+        fromName: debtors[i].name,
+        toId: creditors[j].id,
+        toName: creditors[j].name,
+        amount: Number(pay.toFixed(2)),
+      });
+
+      debtors[i].balance += pay;
+      creditors[j].balance -= pay;
+
+      if (Math.abs(debtors[i].balance) < 0.01) i++;
+      if (Math.abs(creditors[j].balance) < 0.01) j++;
     }
+
     return result;
-  }, [people]);
+  }, [people, avg]);
 
+  /* ------------------ 每人汇总 ------------------ */
 
-  function downloadCSV() {
-    const rows = [["From", "To", "Amount"]].concat(
-      settlements.map((s) => [s.fromName, s.toName, s.amount.toFixed(2)])
+  const perPersonTotals = useMemo(() => {
+    const map = new Map<number, { in: number; out: number }>();
+
+    people.forEach((p) =>
+      map.set(p.id, { in: 0, out: 0 })
     );
-    const csv = rows
-      .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "aa-settlements.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+
+    settlements.forEach((s) => {
+      map.get(s.fromId)!.out += s.amount;
+      map.get(s.toId)!.in += s.amount;
+    });
+
+    return map;
+  }, [people, settlements]);
+
+  /* ------------------ 示例 ------------------ */
+
+  function loadExample() {
+    setPeople([
+      { id: 1, name: "a", paid: 30 },
+      { id: 2, name: "b", paid: 90 },
+      { id: 3, name: "c", paid: 0 },
+    ]);
   }
 
   function resetAll() {
     setPeople([]);
+    setError("");
   }
 
+  /* ------------------ UI ------------------ */
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-sky-50 to-white px-3 py-4 sm:p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="mx-auto max-w-4xl rounded-3xl bg-white/90 backdrop-blur shadow-xl p-4 sm:p-6"
-      >
+    <div className="min-h-screen bg-gradient-to-b from-slate-100 to-white p-4">
+      <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+
         <motion.h1
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-xl sm:text-3xl font-semibold mb-2 text-center"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-2xl font-semibold mb-2"
         >
-          AA 收付款结算
+          AA 收付款
         </motion.h1>
 
-        <p className="text-center text-sm text-slate-600 mb-4">
-          自动均摊费用，并给出最清晰的转账建议
+        <p className="text-sm text-slate-500 mb-4">
+          填写每个人实际支付的金额，系统自动计算谁该向谁转账
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-xl border p-4">
-            <h2 className="font-medium mb-3">成员与支付</h2>
-            <div className="flex flex-col sm:flex-row gap-2 mb-3">
-              <input
-                className="flex-1 p-2 border rounded-lg"
-                placeholder="姓名"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-              />
-              <input
-                type="number"
-                inputMode="decimal"
-                className="flex-1 sm:w-28 p-2 border rounded-lg"
-                placeholder="金额"
-                value={amountInput}
-                onChange={(e) => setAmountInput(Number(e.target.value))}
-              />
-              <button
-                className="px-4 py-2 rounded-lg bg-indigo-600 text-white"
-                onClick={addPerson}
-              >
-                添加
-              </button>
-            </div>
+        {/* 输入区 */}
+        <div className="flex flex-col sm:flex-row gap-2 mb-3">
+          <input
+            ref={nameRef}
+            className="flex-1 p-2 border rounded"
+            placeholder="姓名"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <input
+            type="number"
+            inputMode="decimal"
+            className="sm:w-32 p-2 border rounded"
+            placeholder="金额"
+            value={amountInput}
+            onChange={(e) => setAmountInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <button
+            onClick={addPerson}
+            className="px-4 py-2 bg-indigo-600 text-white rounded"
+          >
+            添加
+          </button>
+        </div>
 
-            <AnimatePresence>
-              {people.map((p) => (
+        {error && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-sm text-red-600 mb-2"
+          >
+            {error}
+          </motion.div>
+        )}
+
+        {/* 成员列表 */}
+        <div className="space-y-2 mb-4">
+          <AnimatePresence>
+            {people.map((p) => {
+              const t = perPersonTotals.get(p.id) || { in: 0, out: 0 };
+              return (
                 <motion.div
                   key={p.id}
-                  layout
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25 }}
-                  className="flex gap-2 items-center mb-2"
+                  className="flex justify-between items-center p-2 border rounded"
                 >
-                  <input
-                    className="flex-1 p-2 border rounded-lg"
-                    value={p.name}
-                    onChange={(e) => updatePerson(p.id, "name", e.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="w-24 p-2 border rounded-lg"
-                    value={p.paid}
-                    onChange={(e) => updatePerson(p.id, "paid", Number(e.target.value))}
-                  />
+                  <div>
+                    <div className="font-medium">{p.name}</div>
+                    <div className="text-xs text-slate-500">
+                      已付 ¥{p.paid.toFixed(2)} ｜ 付出 ¥{t.out.toFixed(2)} ｜ 收入 ¥{t.in.toFixed(2)}
+                    </div>
+                  </div>
                   <button
-                    className="text-red-500 text-sm"
                     onClick={() => removePerson(p.id)}
+                    className="text-sm text-red-500"
                   >
                     删除
                   </button>
                 </motion.div>
-              ))}
-            </AnimatePresence>
-
-            <div className="mt-3 text-sm text-slate-600 space-y-1">
-              <div>总费用：¥{total.toFixed(2)}</div>
-              <div>人数：{people.length}</div>
-              <div>人均：¥{avg.toFixed(2)}</div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border p-4 bg-gradient-to-b from-white to-slate-50">
-            <h2 className="font-medium mb-3">结算结果</h2>
-            {settlements.length === 0 ? (
-              <div className="text-sm text-slate-500">暂无转账需求</div>
-            ) : (
-              <AnimatePresence>
-                {settlements.map((s, idx) => (
-                  <motion.div
-                    key={idx}
-                    layout
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="flex justify-between items-center p-2 mb-2 bg-white rounded-lg border"
-                  >
-                    <span className="text-sm">{s.fromName} → {s.toName}</span>
-                    <span className="font-semibold">¥{s.amount.toFixed(2)}</span>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            )}
-
-            <div className="mt-4 flex flex-col sm:flex-row gap-2">
-              <button
-                onClick={downloadCSV}
-                className="flex-1 px-4 py-2 rounded-lg bg-emerald-500 text-white"
-              >
-                导出 CSV
-              </button>
-              <button
-                onClick={resetAll}
-                className="flex-1 px-4 py-2 rounded-lg bg-slate-100 text-slate-700"
-              >
-                清空
-              </button>
-            </div>
-          </div>
+              );
+            })}
+          </AnimatePresence>
         </div>
-      </motion.div>
+
+        {/* 转账结果 */}
+        <div className="border-t pt-3">
+          <h3 className="text-sm font-medium mb-2">推荐转账</h3>
+          {settlements.length === 0 ? (
+            <div className="text-sm text-slate-400">
+              暂无转账
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {settlements.map((s, i) => (
+                <div
+                  key={i}
+                  className="flex justify-between p-2 bg-slate-50 rounded"
+                >
+                  <span>
+                    {s.fromName} → {s.toName}
+                  </span>
+                  <span className="font-semibold">
+                    ¥{s.amount.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={loadExample}
+            className="px-3 py-1 bg-sky-500 text-white rounded"
+          >
+            示例
+          </button>
+          <button
+            onClick={resetAll}
+            className="px-3 py-1 bg-slate-200 rounded"
+          >
+            清空
+          </button>
+        </div>
+
+      </div>
     </div>
   );
 }
