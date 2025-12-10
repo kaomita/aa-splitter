@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Person {
@@ -64,21 +64,6 @@ export default function AASplitter() {
     return result;
   }, [people]);
 
-  const perPersonTotals = useMemo(() => {
-    const map = new Map<number, { outgoing: number; incoming: number }>();
-    people.forEach((p) => map.set(p.id, { outgoing: 0, incoming: 0 }));
-    settlements.forEach((s) => {
-      const from = map.get(s.fromId);
-      const to = map.get(s.toId);
-      if (from) from.outgoing += s.amount;
-      if (to) to.incoming += s.amount;
-    });
-    for (const v of map.values()) {
-      v.outgoing = Number(v.outgoing.toFixed(2));
-      v.incoming = Number(v.incoming.toFixed(2));
-    }
-    return map;
-  }, [people, settlements]);
 
   function downloadCSV() {
     const rows = [["From", "To", "Amount"]].concat(
